@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
-from schema import Transcript, WordEntry
+from schema import Transcript, WordEntry, Clip
 
 
 def _fmt_time(seconds: float) -> str:
@@ -75,17 +75,28 @@ class HudRenderer:
         p = self.pad
 
         active = self._active_word(t)
-        progress = min(t / self.transcript.duration, 1.0) if self.transcript.duration > 0 else 0.0
+        clip = self.transcript.active_clip(t)
+
+        # Clip-relative progress and time
+        if clip:
+            clip_t = t - clip.start
+            clip_dur = clip.duration
+            title = clip.title
+        else:
+            clip_t = t
+            clip_dur = self.transcript.duration
+            title = self.transcript.title
+        progress = min(clip_t / clip_dur, 1.0) if clip_dur > 0 else 0.0
 
         # --- Top bar background ---
         draw.rectangle([0, 0, W, self.bar_h], fill=(10, 10, 20, self.bg_alpha))
 
         # Title (left)
-        draw.text((p, self.bar_h // 2), self.transcript.title, font=self.font_title,
+        draw.text((p, self.bar_h // 2), title, font=self.font_title,
                   fill=(220, 220, 255, 255), anchor="lm")
 
-        # Time (right)
-        time_str = f"{_fmt_time(t)} / {_fmt_time(self.transcript.duration)}"
+        # Clip-relative time (right)
+        time_str = f"{_fmt_time(clip_t)} / {_fmt_time(clip_dur)}"
         draw.text((W - p, self.bar_h // 2), time_str, font=self.font_title,
                   fill=(180, 180, 200, 255), anchor="rm")
 
