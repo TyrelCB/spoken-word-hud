@@ -2,7 +2,7 @@
 from __future__ import annotations
 import math
 from PIL import Image, ImageDraw
-from renderer import HudRenderer, _load_font, _fmt_time, _confidence_color
+from renderer import HudRenderer, _load_font, _fmt_time, _confidence_color, _wpm_color
 from schema import Transcript
 
 
@@ -358,14 +358,115 @@ class RetroRenderer(HudRenderer):
         return img
 
 
+# ── Diagnostic ────────────────────────────────────────────────────────────────
+
+class DiagnosticRenderer(HudRenderer):
+    """Full quality dashboard: quality score, confidence, WPM bar, word duration, gap."""
+
+    def render_frame(self, t: float) -> Image.Image:
+        img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        W, H = self.width, self.height
+        p = self.pad
+        s = H / 1080
+
+        active = self._active_word(t)
+        metrics = self._pacing_metrics(t)
+        clip = self.transcript.active_clip(t)
+        clip_t = (t - clip.start) if clip else t
+        clip_dur = clip.duration if clip else self.transcript.duration
+        title = clip.title if clip else self.transcript.title
+        progress = min(clip_t / clip_dur, 1.0) if clip_dur > 0 else 0.0
+
+        # --- Top bar ---
+        draw.rectangle([0, 0, W, self.bar_h], fill=(10, 10, 20, self.bg_alpha))
+        draw.text((p, self.bar_h // 2), title, font=self.font_title,
+                  fill=(220, 220, 255, 255), anchor="lm")
+        draw.text((W - p, self.bar_h // 2),
+                  f"{_fmt_time(clip_t)} / {_fmt_time(clip_dur)}",
+                  font=self.font_title, fill=(180, 180, 200, 255), anchor="rm")
+
+        # --- Active word ---
+        if active:
+            self._draw_word(img, _strip(active.word), (255, 255, 255, 255),
+                            t - active.start)
+
+        # --- Metrics panel ---
+        conf = active.confidence if active else 0.0
+        wpm = metrics["wpm"]
+        word_dur = metrics["word_duration"]
+        word_gap = metrics["word_gap"]
+        quality = metrics["quality_score"]
+
+        row_gap = int(10 * s)
+        row_stride = self.gauge_h + row_gap
+        label_w = int(180 * s)
+        pct_w = int(110 * s)
+        bar_x = p + label_w
+        bar_w = W - bar_x - p - pct_w
+
+        panel_top = int(H * 0.56)
+        panel_h = 3 * row_stride + 2 * (self.gauge_h + row_gap) + int(p * 0.6)
+        draw.rectangle([p - 10, panel_top - 10, W - p + 10, panel_top + panel_h],
+                       fill=(10, 10, 20, self.bg_alpha))
+
+        def bar_row(y, label, fraction, text, color):
+            draw.text((p, y + self.gauge_h // 2), label,
+                      font=self.font_label, fill=(150, 150, 170, 255), anchor="lm")
+            draw.rectangle([bar_x, y, bar_x + bar_w, y + self.gauge_h],
+                           fill=(30, 30, 50, 220))
+            fw = int(bar_w * max(0.0, min(1.0, fraction)))
+            if fw > 0:
+                draw.rectangle([bar_x, y, bar_x + fw, y + self.gauge_h],
+                               fill=(*color, 230))
+            draw.text((bar_x + bar_w + p // 2, y + self.gauge_h // 2),
+                      text, font=self.font_label, fill=(200, 200, 220, 255), anchor="lm")
+
+        def text_row(y, label, text):
+            draw.text((p, y + self.gauge_h // 2), label,
+                      font=self.font_label, fill=(150, 150, 170, 255), anchor="lm")
+            draw.text((W - p, y + self.gauge_h // 2), text,
+                      font=self.font_label, fill=(200, 200, 220, 255), anchor="rm")
+
+        y = panel_top
+        bar_row(y, "QUALITY", quality / 100, str(quality), _confidence_color(quality / 100))
+        y += row_stride
+        bar_row(y, "CONF", conf, f"{int(conf * 100)}%",
+                _confidence_color(conf) if active else (60, 60, 80))
+        y += row_stride
+        bar_row(y, "WPM", min(wpm / 250, 1.0) if wpm > 0 else 0.0,
+                f"{int(wpm)}", _wpm_color(wpm))
+        y += row_stride
+        text_row(y, "WORD DUR", f"{word_dur:.2f} s" if word_dur is not None else "—")
+        y += row_stride
+        text_row(y, "GAP", f"{word_gap:.2f} s" if word_gap is not None else "—")
+
+        # --- Timeline ---
+        tl_y = H - p - self.timeline_h
+        tl_x = p
+        tl_w = W - 2 * p
+        draw.rectangle([0, tl_y - 16, W, H], fill=(10, 10, 20, self.bg_alpha))
+        draw.text((tl_x, tl_y - 12), "TIMELINE", font=self.font_small,
+                  fill=(120, 120, 140, 200), anchor="lb")
+        draw.rectangle([tl_x, tl_y, tl_x + tl_w, tl_y + self.timeline_h],
+                       fill=(30, 30, 50, 220))
+        fill_tl = int(tl_w * progress)
+        if fill_tl > 0:
+            draw.rectangle([tl_x, tl_y, tl_x + fill_tl, tl_y + self.timeline_h],
+                           fill=(100, 140, 220, 230))
+
+        return img
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 
 STYLES: dict[str, type] = {
-    "default":   HudRenderer,
-    "minimal":   MinimalRenderer,
-    "neon":      NeonRenderer,
-    "subtitle":  SubtitleRenderer,
-    "retro":     RetroRenderer,
+    "default":    HudRenderer,
+    "minimal":    MinimalRenderer,
+    "neon":       NeonRenderer,
+    "subtitle":   SubtitleRenderer,
+    "retro":      RetroRenderer,
+    "diagnostic": DiagnosticRenderer,
 }
 
 

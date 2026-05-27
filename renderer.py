@@ -19,6 +19,14 @@ def _confidence_color(confidence: float) -> Tuple[int, int, int]:
     return (220, 80, 80)        # red
 
 
+def _wpm_color(wpm: float) -> Tuple[int, int, int]:
+    if 120 <= wpm <= 180:
+        return (80, 220, 100)   # green — natural speech rate
+    if 90 <= wpm <= 220:
+        return (240, 200, 60)   # yellow — slightly off
+    return (220, 80, 80)        # red — too fast or too slow
+
+
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -106,6 +114,33 @@ class HudRenderer:
                 return w
         return None
 
+    def _pacing_metrics(self, t: float) -> dict:
+        active = self._active_word(t)
+        words = self.transcript.words
+
+        spoken = [w for w in words if w.end <= t]
+        window = spoken[-10:]
+        if len(window) >= 2:
+            span = window[-1].end - window[0].start
+            wpm = len(window) / span * 60 if span > 0 else 0.0
+        else:
+            wpm = 0.0
+
+        word_duration = (active.end - active.start) if active else None
+
+        word_gap = None
+        if active:
+            for i, w in enumerate(words):
+                if w is active and i > 0:
+                    word_gap = max(0.0, active.start - words[i - 1].end)
+                    break
+
+        conf = active.confidence if active else (spoken[-1].confidence if spoken else 0.0)
+        wpm_score = max(0.0, 1.0 - abs(wpm - 150) / 100) if wpm > 0 else 0.0
+        quality = round((0.6 * conf + 0.4 * wpm_score) * 100)
+
+        return {"wpm": wpm, "word_duration": word_duration, "word_gap": word_gap, "quality_score": quality}
+
     def render_frame(self, t: float) -> Image.Image:
         img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
@@ -145,7 +180,7 @@ class HudRenderer:
             word_text = active.word.strip(".,!?;:\"'()-–—").upper()
             self._draw_word(img, word_text, word_color, dt)
 
-        # --- Confidence gauge ---
+        # --- Confidence gauge + WPM badge ---
         conf_panel_y = int(H * 0.68)
         conf_bar_x = p + int(200 * (H / 1080))
         pct_label_w = int(80 * (H / 1080))
@@ -154,9 +189,16 @@ class HudRenderer:
         conf = active.confidence if active else 0.0
         conf_color = _confidence_color(conf) if active else (60, 60, 80)
 
-        # Panel background
+        metrics = self._pacing_metrics(t)
+        wpm = metrics["wpm"]
+        wpm_color = _wpm_color(wpm)
+        wpm_row_gap = int(6 * (H / 1080))
+        wpm_row_h = int(28 * (H / 1080))
+
+        # Panel background (covers confidence bar + WPM badge row)
         draw.rectangle(
-            [p - 10, conf_panel_y - 10, W - p + 10, conf_panel_y + self.gauge_h + 10],
+            [p - 10, conf_panel_y - 10,
+             W - p + 10, conf_panel_y + self.gauge_h + wpm_row_gap + wpm_row_h + 12],
             fill=(10, 10, 20, self.bg_alpha),
         )
         draw.text((p, conf_panel_y + self.gauge_h // 2), "CONFIDENCE",
@@ -175,6 +217,12 @@ class HudRenderer:
         pct_text = f"{int(conf * 100)}%"
         draw.text((conf_bar_x + conf_bar_w + p // 2, conf_panel_y + self.gauge_h // 2),
                   pct_text, font=self.font_label, fill=(200, 200, 220, 255), anchor="lm")
+
+        # WPM badge (right-aligned, below confidence bar)
+        wpm_badge_y = conf_panel_y + self.gauge_h + wpm_row_gap + wpm_row_h // 2
+        wpm_text = f"WPM  {int(wpm)}" if wpm > 0 else "WPM  —"
+        draw.text((W - p, wpm_badge_y), wpm_text, font=self.font_small,
+                  fill=(*wpm_color, 220), anchor="rm")
 
         # --- Timeline bar ---
         tl_y = H - p - self.timeline_h
