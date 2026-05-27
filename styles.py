@@ -81,32 +81,18 @@ class MinimalRenderer(HudRenderer):
 # ── Neon / Futuristic targeting HUD ──────────────────────────────────────────
 
 class NeonRenderer(HudRenderer):
-    """Futuristic targeting HUD. Corner brackets, electric blue + amber, no full-width panels."""
+    """Futuristic HUD. Word lower-right with black outline + glow, confidence bar beneath."""
 
-    BLUE   = (0, 210, 255)    # electric cyan-blue
-    AMBER  = (255, 170, 0)    # amber for hot / active
-    DIM    = (0, 70, 110)     # inactive blue
-    WHITE  = (210, 240, 255)  # cool white
-
-    def _bracket_corners(self, draw, x1, y1, x2, y2, color, arm=22, thickness=3):
-        """Draw 4 corner L-brackets around a rectangle."""
-        a = arm
-        c = (*color, 230)
-        lw = thickness
-        for (px, py, dx, dy) in [(x1,y1,1,1),(x2,y1,-1,1),(x1,y2,1,-1),(x2,y2,-1,-1)]:
-            draw.line([(px, py), (px + dx*a, py)], fill=c, width=lw)
-            draw.line([(px, py), (px, py + dy*a)], fill=c, width=lw)
-
-    def _hline(self, draw, y, color, alpha=80, x1=None, x2=None):
-        W = self.width
-        draw.line([(x1 or 0, y), (x2 or W, y)], fill=(*color, alpha), width=1)
+    BLUE   = (0, 210, 255)
+    AMBER  = (255, 170, 0)
+    DIM    = (0, 70, 110)
 
     def render_frame(self, t: float) -> Image.Image:
         img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         W, H = self.width, self.height
         p = self.pad
-        s = H / 1080  # scale factor
+        s = H / 1080
 
         active = self._active_word(t)
         clip = self.transcript.active_clip(t)
@@ -116,84 +102,66 @@ class NeonRenderer(HudRenderer):
         progress = min(clip_t / clip_dur, 1.0) if clip_dur > 0 else 0.0
         conf = active.confidence if active else 0.0
 
-        # ── Subtle accent lines ──
-        self._hline(draw, int(H * 0.12), self.BLUE, 50)
-        self._hline(draw, int(H * 0.88), self.BLUE, 50)
-
-        # ── Top-left: [ TITLE ] ──
-        tx, ty = p, int(p * 1.2)
-        draw.text((tx, ty), f"[ {title.upper()} ]",
+        # ── Top-left: title ──
+        draw.text((p, int(p * 1.2)), f"[ {title.upper()} ]",
                   font=self.font_label, fill=(*self.BLUE, 220), anchor="lt")
 
         # ── Top-right: time ──
-        draw.text((W - p, ty),
+        draw.text((W - p, int(p * 1.2)),
                   f"{_fmt_time(clip_t)}  /  {_fmt_time(clip_dur)}",
                   font=self.font_label, fill=(*self.DIM, 210), anchor="rt")
 
-        # ── Screen corner brackets (edge decoration, not around the word) ──
-        corner_pad = int(p * 0.7)
-        self._bracket_corners(draw,
-            corner_pad, corner_pad, W - corner_pad, H - corner_pad,
-            self.BLUE, arm=int(30 * s), thickness=max(2, int(3 * s)))
+        # ── Lower-right word: right-aligned, black outline + glow ──
+        word_cx = W // 2   # temp render anchor; we right-align on paste
+        word_cy = int(H * 0.68)
 
-        # ── Center word: black outline + glow ──
-        word_y = int(H * 0.46)
         if active:
             dt = t - active.start
             word_text = _strip(active.word)
             scale = max(0.5, self._bounce_scale(dt))
 
-            # Build on temp: outline first, then glow on top
             tmp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             d = ImageDraw.Draw(tmp)
             outline_px = max(3, int(5 * s))
             for dx in range(-outline_px, outline_px + 1):
                 for dy in range(-outline_px, outline_px + 1):
                     if dx != 0 or dy != 0:
-                        d.text((W // 2 + dx, word_y + dy), word_text,
-                               font=self.font_word, fill=(0, 0, 0, 220), anchor="mm")
-            _glow(d, (W // 2, word_y), word_text, self.font_word, self.BLUE)
+                        d.text((word_cx + dx, word_cy + dy), word_text,
+                               font=self.font_word, fill=(0, 0, 0, 230), anchor="mm")
+            _glow(d, (word_cx, word_cy), word_text, self.font_word, self.BLUE)
 
             bb = tmp.getbbox()
             if bb:
-                pad = 14
-                x1 = max(0, bb[0] - pad)
-                y1 = max(0, bb[1] - pad)
-                x2 = min(W, bb[2] + pad)
-                y2 = min(H, bb[3] + pad)
+                pad = 12
+                x1 = max(0, bb[0] - pad); y1 = max(0, bb[1] - pad)
+                x2 = min(W, bb[2] + pad); y2 = min(H, bb[3] + pad)
                 nw = max(1, int((x2 - x1) * scale))
                 nh = max(1, int((y2 - y1) * scale))
-                cropped = tmp.crop((x1, y1, x2, y2))
-                scaled_word = cropped.resize((nw, nh), Image.LANCZOS)
-                img.paste(scaled_word, (W // 2 - nw // 2, word_y - nh // 2), scaled_word)
+                scaled_word = tmp.crop((x1, y1, x2, y2)).resize((nw, nh), Image.LANCZOS)
+                wx = W - p - nw          # right-align to edge
+                wy = word_cy - nh // 2
+                img.paste(scaled_word, (wx, wy), scaled_word)
 
-        # ── Left edge: vertical confidence meter ──
-        meter_x   = int(p * 0.55)
-        meter_w   = max(4, int(8 * s))
-        meter_top = int(H * 0.30)
-        meter_bot = int(H * 0.70)
-        meter_h   = meter_bot - meter_top
-        fill_h    = int(meter_h * conf)
+                # ── Confidence bar directly below word ──
+                bar_gap  = int(12 * s)
+                bar_h    = max(6, int(10 * s))
+                bar_w    = nw
+                bar_x    = wx
+                bar_y    = wy + nh + bar_gap
 
-        # Track
-        draw.rectangle([meter_x, meter_top, meter_x + meter_w, meter_bot],
-                       fill=(*self.DIM, 60))
-        # Fill from bottom
-        if fill_h > 0:
-            draw.rectangle([meter_x, meter_bot - fill_h, meter_x + meter_w, meter_bot],
-                           fill=(*self.AMBER, 200))
-            # Glow tip
-            draw.rectangle([meter_x - 2, meter_bot - fill_h - 2,
-                            meter_x + meter_w + 2, meter_bot - fill_h + 2],
-                           fill=(*self.AMBER, 255))
-        # Label
-        draw.text((meter_x + meter_w // 2, meter_top - int(10 * s)),
-                  f"{int(conf*100)}",
-                  font=self.font_small, fill=(*self.AMBER, 200), anchor="mb")
-        draw.text((meter_x + meter_w // 2, meter_bot + int(8 * s)),
-                  "CF", font=self.font_small, fill=(*self.DIM, 180), anchor="mt")
+                draw.rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h],
+                               fill=(*self.DIM, 80))
+                fw = int(bar_w * conf)
+                if fw > 0:
+                    draw.rectangle([bar_x, bar_y, bar_x + fw, bar_y + bar_h],
+                                   fill=(*self.AMBER, 210))
+                    draw.rectangle([bar_x + fw - 2, bar_y, bar_x + fw + 2, bar_y + bar_h],
+                                   fill=(*self.AMBER, 255))
+                draw.text((bar_x - int(8 * s), bar_y + bar_h // 2),
+                          f"{int(conf * 100)}%",
+                          font=self.font_small, fill=(*self.AMBER, 200), anchor="rm")
 
-        # ── Bottom: thin timeline with diamond position marker ──
+        # ── Bottom timeline with diamond marker ──
         tl_y  = H - int(p * 1.1)
         tl_x1 = p
         tl_x2 = W - p
@@ -201,16 +169,13 @@ class NeonRenderer(HudRenderer):
         pos_x = tl_x1 + int(tl_w * progress)
 
         draw.line([(tl_x1, tl_y), (tl_x2, tl_y)], fill=(*self.DIM, 100), width=max(1, int(2*s)))
-        # Filled portion
         if pos_x > tl_x1:
-            draw.line([(tl_x1, tl_y), (pos_x, tl_y)], fill=(*self.BLUE, 180), width=max(2, int(3*s)))
-        # Diamond marker
+            draw.line([(tl_x1, tl_y), (pos_x, tl_y)],
+                      fill=(*self.BLUE, 180), width=max(2, int(3*s)))
         d_size = int(7 * s)
         draw.polygon([
-            (pos_x, tl_y - d_size),
-            (pos_x + d_size, tl_y),
-            (pos_x, tl_y + d_size),
-            (pos_x - d_size, tl_y),
+            (pos_x, tl_y - d_size), (pos_x + d_size, tl_y),
+            (pos_x, tl_y + d_size), (pos_x - d_size, tl_y),
         ], fill=(*self.BLUE, 255))
 
         return img
