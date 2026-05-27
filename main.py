@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 from schema import load_transcript
-from renderer import HudRenderer
+from styles import get_renderer, STYLES
 from pipeline import render_video
 
 
@@ -28,6 +28,9 @@ def main():
                         metavar="WxH", help="Output resolution (default: 1920x1080)")
     parser.add_argument("--bg-alpha", type=int, default=200, metavar="0-255",
                         help="HUD panel background opacity (default: 200)")
+    parser.add_argument("--style", default="default",
+                        choices=list(STYLES.keys()),
+                        help="Visual style (default: default)")
     args = parser.parse_args()
 
     if not Path(args.input).exists():
@@ -45,7 +48,8 @@ def main():
     print(f"  Duration: {transcript.duration:.2f}s")
 
     w, h = args.size
-    renderer = HudRenderer(
+    renderer = get_renderer(
+        args.style,
         transcript=transcript,
         width=w,
         height=h,
