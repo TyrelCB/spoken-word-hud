@@ -130,16 +130,28 @@ class NeonRenderer(HudRenderer):
                   f"{_fmt_time(clip_t)}  /  {_fmt_time(clip_dur)}",
                   font=self.font_label, fill=(*self.DIM, 210), anchor="rt")
 
-        # ── Center word with targeting brackets + glow ──
+        # ── Screen corner brackets (edge decoration, not around the word) ──
+        corner_pad = int(p * 0.7)
+        self._bracket_corners(draw,
+            corner_pad, corner_pad, W - corner_pad, H - corner_pad,
+            self.BLUE, arm=int(30 * s), thickness=max(2, int(3 * s)))
+
+        # ── Center word: black outline + glow ──
         word_y = int(H * 0.46)
         if active:
             dt = t - active.start
             word_text = _strip(active.word)
             scale = max(0.5, self._bounce_scale(dt))
 
-            # Render to temp for sizing + glow
+            # Build on temp: outline first, then glow on top
             tmp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             d = ImageDraw.Draw(tmp)
+            outline_px = max(3, int(5 * s))
+            for dx in range(-outline_px, outline_px + 1):
+                for dy in range(-outline_px, outline_px + 1):
+                    if dx != 0 or dy != 0:
+                        d.text((W // 2 + dx, word_y + dy), word_text,
+                               font=self.font_word, fill=(0, 0, 0, 220), anchor="mm")
             _glow(d, (W // 2, word_y), word_text, self.font_word, self.BLUE)
 
             bb = tmp.getbbox()
@@ -153,24 +165,7 @@ class NeonRenderer(HudRenderer):
                 nh = max(1, int((y2 - y1) * scale))
                 cropped = tmp.crop((x1, y1, x2, y2))
                 scaled_word = cropped.resize((nw, nh), Image.LANCZOS)
-                wx = W // 2 - nw // 2
-                wy = word_y - nh // 2
-                img.paste(scaled_word, (wx, wy), scaled_word)
-
-                # Targeting brackets around scaled bounding box
-                bpad = int(18 * s)
-                self._bracket_corners(draw,
-                    wx - bpad, wy - bpad,
-                    wx + nw + bpad, wy + nh + bpad,
-                    self.BLUE, arm=int(20 * s), thickness=max(2, int(3 * s)))
-
-                # Thin underline accent (amber)
-                ux = wx
-                uw = int(nw * conf)
-                uy = wy + nh + bpad + int(6 * s)
-                draw.line([(ux, uy), (ux + nw, uy)], fill=(*self.DIM, 120), width=max(1, int(2*s)))
-                if uw > 0:
-                    draw.line([(ux, uy), (ux + uw, uy)], fill=(*self.AMBER, 220), width=max(2, int(3*s)))
+                img.paste(scaled_word, (W // 2 - nw // 2, word_y - nh // 2), scaled_word)
 
         # ── Left edge: vertical confidence meter ──
         meter_x   = int(p * 0.55)
