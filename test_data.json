@@ -1,0 +1,15 @@
+{
+  "title": "Hyperframes Demo",
+  "words": [
+    {"word": "Welcome",    "start": 0.5,  "end": 1.1,  "confidence": 0.98},
+    {"word": "to",         "start": 1.2,  "end": 1.4,  "confidence": 0.99},
+    {"word": "the",        "start": 1.45, "end": 1.65, "confidence": 0.97},
+    {"word": "hyperframes","start": 1.7,  "end": 2.5,  "confidence": 0.91},
+    {"word": "overlay",    "start": 2.6,  "end": 3.1,  "confidence": 0.88},
+    {"word": "system",     "start": 3.2,  "end": 3.8,  "confidence": 0.76},
+    {"word": "confidence", "start": 4.5,  "end": 5.3,  "confidence": 0.55},
+    {"word": "low",        "start": 5.4,  "end": 5.9,  "confidence": 0.32},
+    {"word": "test",       "start": 7.0,  "end": 7.6,  "confidence": 0.95},
+    {"word": "complete",   "start": 7.8,  "end": 8.6,  "confidence": 0.93}
+  ]
+}
