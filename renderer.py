@@ -106,12 +106,14 @@ class HudRenderer:
             flash = (t - active.start) < self._flash_duration
             word_color = (255, 255, 255, 255) if flash else (230, 230, 255, 255)
             word_text = active.word.strip(".,!?;:\"'()-–—").upper()
-        else:
-            word_color = (80, 80, 100, 180)
-            word_text = "·"
-
-        draw.text((W // 2, word_y_center), word_text, font=self.font_word,
-                  fill=word_color, anchor="mm")
+            outline = 4
+            for dx in range(-outline, outline + 1):
+                for dy in range(-outline, outline + 1):
+                    if dx != 0 or dy != 0:
+                        draw.text((W // 2 + dx, word_y_center + dy), word_text,
+                                  font=self.font_word, fill=(0, 0, 0, 220), anchor="mm")
+            draw.text((W // 2, word_y_center), word_text, font=self.font_word,
+                      fill=word_color, anchor="mm")
 
         # --- Confidence gauge ---
         conf_panel_y = int(H * 0.68)
