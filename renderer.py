@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from typing import Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 from schema import Transcript, WordEntry, Clip
@@ -62,6 +63,43 @@ class HudRenderer:
 
         self._flash_duration = 2.0 / fps  # seconds
 
+    def _bounce_scale(self, dt: float) -> float:
+        """Damped spring: pops in large, bounces down to 1.0."""
+        return 1.0 + 0.40 * math.exp(-10 * dt) * math.cos(20 * dt)
+
+    def _draw_word(self, img: Image.Image, word_text: str, color: tuple, dt: float):
+        """Render word centered with bounce scale and black outline."""
+        W, H = self.width, self.height
+        cx, cy = W // 2, int(H * 0.46)
+        scale = max(0.5, self._bounce_scale(dt))
+
+        # Draw onto temp canvas at normal size, then scale the result
+        tmp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        outline = 4
+        for dx in range(-outline, outline + 1):
+            for dy in range(-outline, outline + 1):
+                if dx != 0 or dy != 0:
+                    d.text((cx + dx, cy + dy), word_text, font=self.font_word,
+                           fill=(0, 0, 0, 220), anchor="mm")
+        d.text((cx, cy), word_text, font=self.font_word, fill=color, anchor="mm")
+
+        bbox = tmp.getbbox()
+        if not bbox:
+            return
+        pad = 8
+        x1 = max(0, bbox[0] - pad)
+        y1 = max(0, bbox[1] - pad)
+        x2 = min(W, bbox[2] + pad)
+        y2 = min(H, bbox[3] + pad)
+        cropped = tmp.crop((x1, y1, x2, y2))
+
+        new_w = max(1, int((x2 - x1) * scale))
+        new_h = max(1, int((y2 - y1) * scale))
+        scaled = cropped.resize((new_w, new_h), Image.LANCZOS)
+
+        img.paste(scaled, (cx - new_w // 2, cy - new_h // 2), scaled)
+
     def _active_word(self, t: float) -> Optional[WordEntry]:
         for w in self.transcript.words:
             if w.start <= t <= w.end:
@@ -100,20 +138,12 @@ class HudRenderer:
         draw.text((W - p, self.bar_h // 2), time_str, font=self.font_title,
                   fill=(180, 180, 200, 255), anchor="rm")
 
-        # --- Active word (center) ---
-        word_y_center = int(H * 0.46)
+        # --- Active word (center, bounced) ---
         if active:
-            flash = (t - active.start) < self._flash_duration
-            word_color = (255, 255, 255, 255) if flash else (230, 230, 255, 255)
+            dt = t - active.start
+            word_color = (255, 255, 255, 255)
             word_text = active.word.strip(".,!?;:\"'()-–—").upper()
-            outline = 4
-            for dx in range(-outline, outline + 1):
-                for dy in range(-outline, outline + 1):
-                    if dx != 0 or dy != 0:
-                        draw.text((W // 2 + dx, word_y_center + dy), word_text,
-                                  font=self.font_word, fill=(0, 0, 0, 220), anchor="mm")
-            draw.text((W // 2, word_y_center), word_text, font=self.font_word,
-                      fill=word_color, anchor="mm")
+            self._draw_word(img, word_text, word_color, dt)
 
         # --- Confidence gauge ---
         conf_panel_y = int(H * 0.68)
