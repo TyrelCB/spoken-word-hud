@@ -105,7 +105,7 @@ class HudRenderer:
         if active:
             flash = (t - active.start) < self._flash_duration
             word_color = (255, 255, 255, 255) if flash else (230, 230, 255, 255)
-            word_text = active.word.upper()
+            word_text = active.word.strip(".,!?;:\"'()-–—").upper()
         else:
             word_color = (80, 80, 100, 180)
             word_text = "·"
