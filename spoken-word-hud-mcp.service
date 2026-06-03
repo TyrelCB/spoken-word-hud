@@ -1,0 +1,12 @@
+[Unit]
+Description=Spoken Word HUD MCP Server
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/tyrel/projects/spoken-word-hud/mcp_server.py --http --port 8002
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
